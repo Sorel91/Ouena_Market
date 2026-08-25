@@ -36,13 +36,15 @@ function render() {
   lines.querySelectorAll("[data-change]").forEach((button) => button.onclick = () => change(+button.dataset.change, +button.dataset.delta));
   lines.querySelectorAll("[data-remove]").forEach((button) => button.onclick = () => removeItem(+button.dataset.remove));
   count.textContent = quantity;
+  count.hidden = quantity === 0;
+  cartBtn.setAttribute("aria-label", `Ouvrir le panier, ${quantity} article${quantity > 1 ? "s" : ""}`);
   total.textContent = money(totalAmount);
 }
 function add(id) { change(id, 1); showToast(`✓ ${products[id][0]} ajouté au panier`); }
 function change(id, delta) { cart[id] = Math.max(0, (cart[id] || 0) + delta); if (!cart[id]) delete cart[id]; render(); }
 function removeItem(id) { delete cart[id]; render(); showToast("Produit retiré du panier"); }
 function open(element) { backdrop.classList.add("open"); element.classList.add("open"); }
-function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); }
+function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); payment.classList.remove("open"); orange.classList.remove("open"); }
 function switchAuth() {
   signUp = !signUp;
   authTitle.textContent = signUp ? "Créer un compte" : "Connexion";
@@ -73,11 +75,13 @@ authForm.addEventListener("submit", async (event) => {
   if (signUp) { authMessage.textContent = "Vérifiez votre e-mail pour confirmer votre compte."; return; }
   closeAll(); refreshAccount();
 });
-checkoutBtn.onclick = async () => {
+checkoutBtn.onclick = () => {
   if (!Object.keys(cart).length) return showToast("Ajoutez au moins un produit au panier");
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) { closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour poursuivre."; return; }
-  showToast("Le paiement sera activé après configuration Orange Money.");
+  closeAll(); open(payment);
 };
+guestCheckoutBtn.onclick = () => { paymentTotal.textContent = total.textContent; closeAll(); open(orange); };
+loginCheckoutBtn.onclick = () => { closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour retrouver cette commande."; };
+paymentDoneBtn.onclick = () => { closeAll(); showToast("Merci. Votre paiement sera vérifié avant confirmation."); };
 client.auth.onAuthStateChange(refreshAccount);
 refreshAccount(); render();
+
