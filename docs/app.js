@@ -4,12 +4,15 @@ const client = supabase.createClient(
 );
 
 const products = [
-  ["Riz parfumé", "Sac de 25 kg", 17500, "🌾"],
-  ["Riz brisé", "Sac de 25 kg", 14500, "🍚"],
-  ["Huile végétale", "Bidon de 5 L", 9500, "🫙"],
-  ["Sucre blanc", "Sac de 5 kg", 4200, "🧂"],
-  ["Farine de blé", "Sac de 25 kg", 11200, "🥖"],
-  ["Lait en poudre", "Boîte familiale", 3900, "🥛"],
+  ["Épices", "100 g", 1750, "assets/epices.svg"],
+  ["Kit poulcous", "2 850 FCFA / semaine · 10 semaines", 2850, "assets/kit-poulcous.svg"],
+  ["Kit toumata", "5 000 FCFA / semaine", 5000, "assets/kit-toumata.svg"],
+  ["Yira lait", "3 000 FCFA / semaine", 3000, "assets/yira-lait.svg"],
+  ["Huile Dinor", "20 L et 5 L", 0, "assets/huile-dinor.svg"],
+  ["Sac de pommes de terre", "25 kg · prix à confirmer", 0, "assets/pommes-de-terre.svg"],
+  ["Sac d’oignons", "Prix à confirmer", 0, "assets/oignons.svg"],
+  ["Saucisson poulet ou bœuf", "Prix à confirmer", 0, "assets/saucisson.svg"],
+  ["Kit Djiguiya", "Composition sur demande", 0, "assets/kit-djiguiya.svg"],
 ];
 const cart = JSON.parse(localStorage.getItem("ouena-cart") || "{}");
 const SITE_URL = "https://sorel91.github.io/Ouena_Market/";
@@ -17,6 +20,8 @@ const continueCheckout = new URLSearchParams(location.search).get("continue") ==
 let signUp = false;
 let toastTimer;
 let pendingConfirmationEmail = "";
+let currentUser = null;
+let resumeCheckout = false;
 const money = (value) => `${value.toLocaleString("fr-FR")} FCFA`;
 
 function showToast(text) {
@@ -27,14 +32,14 @@ function showToast(text) {
 }
 
 function render() {
-  grid.innerHTML = products.map((p, id) => `<article class="product"><div class="pic">${p[3]}</div><div class="info"><small>${p[1]}</small><h3>${p[0]}</h3><div class="row"><b>${money(p[2])}</b><button class="add" data-add="${id}" aria-label="Ajouter ${p[0]}">+</button></div></div></article>`).join("");
+  grid.innerHTML = products.map((p, id) => `<article class="product"><div class="pic"><img src="${p[3]}" alt="${p[0]}"></div><div class="info"><small>${p[1]}</small><h3>${p[0]}</h3><div class="row"><b>${p[2] ? money(p[2]) : "Prix à confirmer"}</b><button class="add" data-add="${id}" aria-label="Ajouter ${p[0]}">+</button></div></div></article>`).join("");
   grid.querySelectorAll("[data-add]").forEach((button) => button.onclick = () => add(+button.dataset.add));
   let quantity = 0;
   let totalAmount = 0;
   lines.innerHTML = products.map((p, id) => {
     if (!cart[id]) return "";
     quantity += cart[id]; totalAmount += cart[id] * p[2];
-    return `<div class="line"><div><b>${p[3]} ${p[0]}</b><small>${money(p[2])} l’unité</small><button class="remove" data-remove="${id}">Supprimer</button></div><div class="qty"><button data-change="${id}" data-delta="-1">−</button><b>${cart[id]}</b><button data-change="${id}" data-delta="1">+</button></div></div>`;
+    return `<div class="line"><div><b>${p[0]}</b><small>${p[2] ? `${money(p[2])} l’unité` : "Prix à confirmer"}</small><button class="remove" data-remove="${id}">Supprimer</button></div><div class="qty"><button data-change="${id}" data-delta="-1">−</button><b>${cart[id]}</b><button data-change="${id}" data-delta="1">+</button></div></div>`;
   }).join("") || '<p class="message">Votre panier est encore vide.</p>';
   lines.querySelectorAll("[data-change]").forEach((button) => button.onclick = () => change(+button.dataset.change, +button.dataset.delta));
   lines.querySelectorAll("[data-remove]").forEach((button) => button.onclick = () => removeItem(+button.dataset.remove));
@@ -48,9 +53,10 @@ function add(id) { change(id, 1); showToast(`✓ ${products[id][0]} ajouté au p
 function change(id, delta) { cart[id] = Math.max(0, (cart[id] || 0) + delta); if (!cart[id]) delete cart[id]; render(); }
 function removeItem(id) { delete cart[id]; render(); showToast("Produit retiré du panier"); }
 function open(element) { backdrop.classList.add("open"); element.classList.add("open"); }
-function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); confirmation.classList.remove("open"); payment.classList.remove("open"); orange.classList.remove("open"); }
+function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); accountPanel.classList.remove("open"); confirmation.classList.remove("open"); payment.classList.remove("open"); orange.classList.remove("open"); }
 async function startPayment() {
   if (!Object.keys(cart).length) return showToast("Ajoutez au moins un produit au panier");
+  if (Object.keys(cart).some((id) => !products[id][2])) return showToast("Un prix doit être confirmé avant le paiement. Contactez Ouena Market.");
   const { data: { user } } = await client.auth.getUser();
   closeAll();
   if (user) { paymentTotal.textContent = total.textContent; open(orange); return; }
@@ -67,11 +73,13 @@ function switchAuth() {
 }
 async function refreshAccount() {
   const { data: { user } } = await client.auth.getUser();
-  accountBtn.textContent = user ? `Bonjour, ${user.email}` : "Mon compte";
+  currentUser = user;
+  accountBtn.textContent = user ? "Mon espace" : "Mon compte";
+  if (user) accountEmail.textContent = user.email;
 }
 
 cartBtn.onclick = () => open(drawer);
-accountBtn.onclick = () => open(auth);
+accountBtn.onclick = async () => { await refreshAccount(); resumeCheckout = false; if (currentUser) { closeAll(); open(accountPanel); } else open(auth); };
 backdrop.onclick = closeAll;
 document.querySelectorAll(".close").forEach((button) => button.onclick = closeAll);
 authSwitch.onclick = switchAuth;
@@ -80,26 +88,28 @@ authForm.addEventListener("submit", async (event) => {
   const emailValue = email.value;
   const passwordValue = password.value;
   const result = signUp
-    ? await client.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: `${SITE_URL}?continue=checkout` } })
+    ? await client.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: resumeCheckout ? `${SITE_URL}?continue=checkout` : SITE_URL } })
     : await client.auth.signInWithPassword({ email: emailValue, password: passwordValue });
   if (result.error) { authMessage.textContent = `Impossible de continuer : ${result.error.message}`; return; }
   if (signUp) { pendingConfirmationEmail = emailValue; confirmationEmail.textContent = emailValue; closeAll(); open(confirmation); return; }
-  closeAll(); await refreshAccount(); startPayment();
+  closeAll(); await refreshAccount();
+  if (resumeCheckout) startPayment(); else open(accountPanel);
 });
 checkoutBtn.onclick = startPayment;
 guestCheckoutBtn.onclick = () => { paymentTotal.textContent = total.textContent; closeAll(); open(orange); };
-loginCheckoutBtn.onclick = () => { closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour retrouver cette commande."; };
+loginCheckoutBtn.onclick = () => { resumeCheckout = true; closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour retrouver cette commande."; };
 paymentDoneBtn.onclick = () => { closeAll(); showToast("Merci. Votre paiement sera vérifié avant confirmation."); };
 confirmationCloseBtn.onclick = closeAll;
 resendBtn.onclick = async () => {
   if (!pendingConfirmationEmail) return;
-  const { error } = await client.auth.resend({ type: "signup", email: pendingConfirmationEmail, options: { emailRedirectTo: `${SITE_URL}?continue=checkout` } });
+  const { error } = await client.auth.resend({ type: "signup", email: pendingConfirmationEmail, options: { emailRedirectTo: resumeCheckout ? `${SITE_URL}?continue=checkout` : SITE_URL } });
   showToast(error ? `Impossible de renvoyer l’e-mail : ${error.message}` : "Un nouvel e-mail de confirmation a été envoyé.");
 };
 client.auth.onAuthStateChange(async (_event, session) => {
   await refreshAccount();
   if (session && continueCheckout) { history.replaceState({}, "", SITE_URL); showToast("Votre compte est confirmé. Vous pouvez finaliser votre paiement."); startPayment(); }
 });
+signOutBtn.onclick = async () => { const { error } = await client.auth.signOut(); if (error) return showToast(`Impossible de se déconnecter : ${error.message}`); closeAll(); await refreshAccount(); showToast("Vous êtes déconnecté."); };
 refreshAccount().then(async () => {
   if (continueCheckout && (await client.auth.getUser()).data.user) { history.replaceState({}, "", SITE_URL); showToast("Votre compte est confirmé. Vous pouvez finaliser votre paiement."); startPayment(); }
 });
