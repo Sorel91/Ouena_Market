@@ -16,6 +16,7 @@ const SITE_URL = "https://sorel91.github.io/Ouena_Market/";
 const continueCheckout = new URLSearchParams(location.search).get("continue") === "checkout";
 let signUp = false;
 let toastTimer;
+let pendingConfirmationEmail = "";
 const money = (value) => `${value.toLocaleString("fr-FR")} FCFA`;
 
 function showToast(text) {
@@ -82,7 +83,7 @@ authForm.addEventListener("submit", async (event) => {
     ? await client.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: `${SITE_URL}?continue=checkout` } })
     : await client.auth.signInWithPassword({ email: emailValue, password: passwordValue });
   if (result.error) { authMessage.textContent = `Impossible de continuer : ${result.error.message}`; return; }
-  if (signUp) { confirmationEmail.textContent = emailValue; closeAll(); open(confirmation); return; }
+  if (signUp) { pendingConfirmationEmail = emailValue; confirmationEmail.textContent = emailValue; closeAll(); open(confirmation); return; }
   closeAll(); await refreshAccount(); startPayment();
 });
 checkoutBtn.onclick = startPayment;
@@ -90,6 +91,11 @@ guestCheckoutBtn.onclick = () => { paymentTotal.textContent = total.textContent;
 loginCheckoutBtn.onclick = () => { closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour retrouver cette commande."; };
 paymentDoneBtn.onclick = () => { closeAll(); showToast("Merci. Votre paiement sera vérifié avant confirmation."); };
 confirmationCloseBtn.onclick = closeAll;
+resendBtn.onclick = async () => {
+  if (!pendingConfirmationEmail) return;
+  const { error } = await client.auth.resend({ type: "signup", email: pendingConfirmationEmail, options: { emailRedirectTo: `${SITE_URL}?continue=checkout` } });
+  showToast(error ? `Impossible de renvoyer l’e-mail : ${error.message}` : "Un nouvel e-mail de confirmation a été envoyé.");
+};
 client.auth.onAuthStateChange(async (_event, session) => {
   await refreshAccount();
   if (session && continueCheckout) { history.replaceState({}, "", SITE_URL); showToast("Votre compte est confirmé. Vous pouvez finaliser votre paiement."); startPayment(); }
