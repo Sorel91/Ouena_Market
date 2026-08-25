@@ -11,7 +11,9 @@ const products = [
   ["Farine de blé", "Sac de 25 kg", 11200, "🥖"],
   ["Lait en poudre", "Boîte familiale", 3900, "🥛"],
 ];
-const cart = {};
+const cart = JSON.parse(localStorage.getItem("ouena-cart") || "{}");
+const SITE_URL = "https://sorel91.github.io/Ouena_Market/";
+const continueCheckout = new URLSearchParams(location.search).get("continue") === "checkout";
 let signUp = false;
 let toastTimer;
 const money = (value) => `${value.toLocaleString("fr-FR")} FCFA`;
@@ -39,12 +41,20 @@ function render() {
   count.hidden = quantity === 0;
   cartBtn.setAttribute("aria-label", `Ouvrir le panier, ${quantity} article${quantity > 1 ? "s" : ""}`);
   total.textContent = money(totalAmount);
+  localStorage.setItem("ouena-cart", JSON.stringify(cart));
 }
 function add(id) { change(id, 1); showToast(`✓ ${products[id][0]} ajouté au panier`); }
 function change(id, delta) { cart[id] = Math.max(0, (cart[id] || 0) + delta); if (!cart[id]) delete cart[id]; render(); }
 function removeItem(id) { delete cart[id]; render(); showToast("Produit retiré du panier"); }
 function open(element) { backdrop.classList.add("open"); element.classList.add("open"); }
-function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); payment.classList.remove("open"); orange.classList.remove("open"); }
+function closeAll() { backdrop.classList.remove("open"); drawer.classList.remove("open"); auth.classList.remove("open"); confirmation.classList.remove("open"); payment.classList.remove("open"); orange.classList.remove("open"); }
+async function startPayment() {
+  if (!Object.keys(cart).length) return showToast("Ajoutez au moins un produit au panier");
+  const { data: { user } } = await client.auth.getUser();
+  closeAll();
+  if (user) { paymentTotal.textContent = total.textContent; open(orange); return; }
+  open(payment);
+}
 function switchAuth() {
   signUp = !signUp;
   authTitle.textContent = signUp ? "Créer un compte" : "Connexion";
@@ -69,19 +79,23 @@ authForm.addEventListener("submit", async (event) => {
   const emailValue = email.value;
   const passwordValue = password.value;
   const result = signUp
-    ? await client.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: location.href } })
+    ? await client.auth.signUp({ email: emailValue, password: passwordValue, options: { emailRedirectTo: `${SITE_URL}?continue=checkout` } })
     : await client.auth.signInWithPassword({ email: emailValue, password: passwordValue });
-  if (result.error) { authMessage.textContent = result.error.message; return; }
-  if (signUp) { authMessage.textContent = "Vérifiez votre e-mail pour confirmer votre compte."; return; }
-  closeAll(); refreshAccount();
+  if (result.error) { authMessage.textContent = `Impossible de continuer : ${result.error.message}`; return; }
+  if (signUp) { confirmationEmail.textContent = emailValue; closeAll(); open(confirmation); return; }
+  closeAll(); await refreshAccount(); startPayment();
 });
-checkoutBtn.onclick = () => {
-  if (!Object.keys(cart).length) return showToast("Ajoutez au moins un produit au panier");
-  closeAll(); open(payment);
-};
+checkoutBtn.onclick = startPayment;
 guestCheckoutBtn.onclick = () => { paymentTotal.textContent = total.textContent; closeAll(); open(orange); };
 loginCheckoutBtn.onclick = () => { closeAll(); open(auth); authMessage.textContent = "Connectez-vous ou créez un compte pour retrouver cette commande."; };
 paymentDoneBtn.onclick = () => { closeAll(); showToast("Merci. Votre paiement sera vérifié avant confirmation."); };
-client.auth.onAuthStateChange(refreshAccount);
-refreshAccount(); render();
+confirmationCloseBtn.onclick = closeAll;
+client.auth.onAuthStateChange(async (_event, session) => {
+  await refreshAccount();
+  if (session && continueCheckout) { history.replaceState({}, "", SITE_URL); showToast("Votre compte est confirmé. Vous pouvez finaliser votre paiement."); startPayment(); }
+});
+refreshAccount().then(async () => {
+  if (continueCheckout && (await client.auth.getUser()).data.user) { history.replaceState({}, "", SITE_URL); showToast("Votre compte est confirmé. Vous pouvez finaliser votre paiement."); startPayment(); }
+});
+render();
 
